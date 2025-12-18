@@ -35,10 +35,10 @@ jobs:
         run: |
           mlflow run MLProject --env-manager=local
 
-      - name: Get Latest Run ID
+      - name: Get Latest MLflow run_id
         run: |
           sudo apt-get update && sudo apt-get install -y jq
-          RUN_ID=$(mlflow runs list --experiment-name "Sales Transaction - Linear Regression" --max-results 1 --output json | jq -r '.runs[0].info.run_id')
+          RUN_ID=$(mlflow runs list --max-results 1 --output json | jq -r '.runs[0].info.run_id')
           echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
           echo "Latest Run ID: $RUN_ID"
 
@@ -54,7 +54,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Image
+      - name: Build Docker Model
         run: |
           mlflow models build-docker \
             -m runs:/${{ env.RUN_ID }}/model \
