@@ -63,7 +63,7 @@ jobs:
 
       - name: Build Docker Model
         run: |
-          echo "Using Run ID: ${{ env.RUN_ID }}"
+          echo "Building Docker from Run ID: ${{ env.RUN_ID }}"
           mlflow models build-docker \
             -m "runs:/${{ env.RUN_ID }}/model" \
             -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ env.RUN_ID }}
