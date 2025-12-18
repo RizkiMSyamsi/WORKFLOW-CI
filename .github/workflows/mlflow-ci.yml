@@ -10,72 +10,81 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Set up job (implicit)
+      # 1. Set up job (implicit)
 
-      # Run actions/checkout@v3
+      # 2. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Set up Python 3.10 (disesuaikan dari 3.12.7)
+      # 3. Set up Python 3.10
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      # Check Env
+      # 4. Check Env
       - name: Check Env
         run: |
           python --version
           pip --version
+          echo "Current directory: $(pwd)"
 
-      # Install dependencies
+      # 5. Install dependencies
       - name: Install MLflow
         run: |
           pip install --upgrade pip
-          pip install mlflow==3.7.0
+          pip install mlflow==2.17.0 scikit-learn pandas  # versi terbaru & stabil
 
-      # Set MLflow Tracking
-      - name: Set MLflow Tracking URI
-        run: |
-          echo "MLFLOW_TRACKING_URI=file:./mlruns" >> $GITHUB_ENV
-
-      # Run mlflow project
+      # 6. Run MLflow Project
       - name: Run MLflow Project
         run: |
-          mlflow run MLProject --env-manager=local
+          mlflow run . --env-manager=local   # gunakan "." lebih aman daripada "MLProject"
 
-      # Get latest MLflow run_id
+      # 7. Get latest MLflow run_id (diperbaiki & akurat)
       - name: Get latest MLflow run_id
         run: |
-          echo "RUN_ID=$(ls mlruns/*/*/meta.yaml | tail -n 1 | cut -d'/' -f3)" >> $GITHUB_ENV
+          sudo apt-get update && sudo apt-get install -y jq
+          RUN_ID=$(mlflow runs list \
+            --experiment-name "Sales Transaction - Linear Regression" \
+            --max-results 1 \
+            --output json | jq -r '.runs[0].info.run_id')
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "Latest Run ID: $RUN_ID"
 
-      # Install Python dependencies (secondary)
+      # 8. Install additional dependencies (docker client jika diperlukan)
       - name: Install additional dependencies
         run: |
-          pip install docker
+          pip install docker  # sebenarnya Docker sudah ada di runner ubuntu-latest
 
-      # Upload artifact (pengganti Google Drive)
+      # 9. Upload artifact (tetap ke GitHub Artifacts seperti yang Anda inginkan)
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mlflow-artifacts
           path: mlruns/
 
-      # Log in to Docker Hub
+      # 10-11. Login Docker Hub
       - name: Login Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build Docker Model
+      # 12. Build Docker Model (diperbaiki: gunakan runs:/<run_id>/model)
       - name: Build Docker Model
         run: |
           mlflow models build-docker \
-            -m mlruns \
+            -m runs:/${{ env.RUN_ID }}/model \
             -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:${{ env.RUN_ID }}
 
-      # Push Docker Image
+      # 13. Push Docker Image
       - name: Push Docker Image
         run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:${{ env.RUN_ID }}
+
+      # Opsional: tag & push latest (biar lebih lengkap seperti alur dosen)
+      - name: Tag and Push latest
+        run: |
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:${{ env.RUN_ID }} \
+                     ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:latest
