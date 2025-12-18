@@ -1,4 +1,4 @@
-name: MLflow CI Pipeline (Dosen Flow)
+name: MLflow CI Pipeline
 
 on:
   push:
