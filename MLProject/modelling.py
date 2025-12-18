@@ -1,84 +1,69 @@
-import os
 import pandas as pd
 import mlflow
 import mlflow.sklearn
-
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
+# ============================
+# MLFLOW CONFIG 
+# ============================
 
-# =====================================================
-# PATH & BASIC CONFIG
-# =====================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if os.getenv("GITHUB_ACTIONS"):
+    DATA_PATH = "Sales-Transaction-v.4a_preprocessing.csv"  
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")  
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_PATH = os.path.join(BASE_DIR, "Sales-Transaction-v.4a_preprocessing.csv")
+    mlflow.set_tracking_uri(f"sqlite:///{os.path.join(BASE_DIR, 'mlflow.db')}")
 
-DATA_PATH = os.path.join(
-    BASE_DIR,
-    "Sales-Transaction-v.4a_preprocessing.csv"
-)
+mlflow.set_experiment("Sales Transaction - Linear Regression")
+print("MLflow URI :", mlflow.get_tracking_uri())
 
-EXPERIMENT_NAME = "Sales Transaction - Linear Regression"
-
-
-# =====================================================
-# MLFLOW CONFIG
-# =====================================================
-mlflow.set_experiment(EXPERIMENT_NAME)
-mlflow.sklearn.autolog(log_models=True)
-
-print("MLflow Tracking URI :", mlflow.get_tracking_uri())
-print("MLflow Experiment  :", EXPERIMENT_NAME)
-
-
-# =====================================================
+# ============================
 # LOAD DATA
-# =====================================================
+# ============================
 df = pd.read_csv(DATA_PATH)
+print("Dataset shape:", df.shape)
+print("Columns:", list(df.columns))
 
-print("\nDataset loaded successfully")
-print("Shape   :", df.shape)
-print("Columns :", df.columns.tolist())
-
-
-# =====================================================
+# ============================
 # FEATURE & TARGET
-# =====================================================
-TARGET_COL = "Price"
+# ============================
+y = df["Price"]
+X = df.drop(columns=["Price"])
+X = X.astype("float64")
+y = y.astype("float64")
 
-X = df.drop(columns=[TARGET_COL]).astype("float64")
-y = df[TARGET_COL].astype("float64")
-
-
-# =====================================================
-# TRAIN TEST SPLIT
-# =====================================================
+# ============================
+# SPLIT DATA
+# ============================
 X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42
+    X, y, test_size=0.2, random_state=42
 )
 
-print("\nTrain shape:", X_train.shape)
-print("Test shape :", X_test.shape)
+# ============================
+# TRAIN & LOG MODEL
+# ============================
+with mlflow.start_run(run_name="Linear Regression - Sales Price"):
+    mlflow.sklearn.autolog()  
 
+    model = LinearRegression()
+    model.fit(X_train, y_train)
 
-# =====================================================
-# MODEL TRAINING
-# =====================================================
-model = LinearRegression()
-model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
 
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
-# =====================================================
-# EVALUATION
-# =====================================================
-y_pred = model.predict(X_test)
+    # Log metrics manual
+    mlflow.log_metric("mse", mse)
+    mlflow.log_metric("r2", r2)
 
-mse = mean_squared_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+    # Log model secara eksplisit
+    mlflow.sklearn.log_model(model, artifact_path="model")
 
-print("\nTraining completed successfully")
-print("MSE :", mse)
-print("R2  :", r2)
+    print("\nTraining completed")
+    print("MSE:", mse)
+    print("R2 :", r2)
