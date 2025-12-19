@@ -1,86 +1,57 @@
-name: MLflow CI/CD Retraining Pipeline
-
-permissions:
-  contents: write
+name: CI/CD MLflow
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  retrain:
+  mlflow-ci:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Ambil kode
-    - name: Checkout repo
-      uses: actions/checkout@v4
+      # 1. Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # 2. Setup Python
-    - name: Setup Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.10"
+      # 2. Setup Conda
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: 3.10
+          activate-environment: mlflow-env
+          environment-file: MLProject/conda.yaml
+          use-mamba: true
 
-    # 3. Install dependencies
-    - name: Install dependencies
-      run: |
-        pip install mlflow==3.7.0
-        pip install pandas scikit-learn
+      # 3. Install MLflow CLI (optional, kalau pip environment belum menginstal)
+      - name: Install MLflow CLI
+        run: pip install mlflow==3.7.0
 
-    # 4. Explicit run modelling.py (bukan MLProject)
-    - name: Run modelling.py
-      run: |
-        python MLProject/modelling.py
+      # 4. Run MLflow Project
+      - name: Run MLflow Project
+        run: mlflow run MLProject --experiment-name "Sales Transaction - Linear Regression"
 
-    # 5. Ambil run_id terbaru dari mlflow.db + mlruns/
-    - name: Get latest MLflow run_id
-      id: get_run
-      run: |
-        RUN_ID=$(ls -td mlruns/0/*/ | head -n 1 | cut -d'/' -f3)
+      # 5. Upload mlruns sebagai artefak
+      - name: Upload MLflow Artefacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlflow-runs
+          path: MLProject/mlruns
 
-        if [ -z "$RUN_ID" ]; then
-          echo "FATAL ERROR: RUN_ID tidak ditemukan."
-          exit 1
-        fi
+      # 6. Build Docker Image
+      - name: Build Docker Image
+        run: mlflow build-docker MLProject
 
-        echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
-        echo "Latest run_id: $RUN_ID"
+      # 7. Push Docker Image
+      - name: Docker login
+        if: secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-    # 6. Force-push artifacts mlruns + mlflow.db ke repo
-    - name: Push MLflow Artifacts
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-        git add -f mlruns/ mlflow.db
-
-        git commit -m "Add MLflow artifacts for run $RUN_ID" || echo "No changes to commit"
-
-        git push https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
-
-    # 7. Build Docker image
-    - name: Build Docker Model
-      run: |
-        mlflow models build-docker \
-          --model-uri "runs:/${{ env.RUN_ID }}/model" \
-          --name sales-mlflow-model
-
-    # 8. Login Docker Hub
-    - name: Docker Login
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    # 9. Tag Image
-    - name: Tag Docker Image
-      run: |
-        docker tag sales-mlflow-model \
-        ${{ secrets.DOCKERHUB_USERNAME }}/sales-mlflow-model:latest
-
-    # 10. Push Docker Image
-    - name: Push Docker Image
-      run: |
-        docker push ${{ secrets.DOCKERHUB_USERNAME }}/sales-mlflow-model:latest
+      - name: Push Docker Image
+        if: secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD
+        run: |
+          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/sales-linear-regression:latest
+          docker tag mlflow-project:latest $IMAGE_NAME
+          docker push $IMAGE_NAME
