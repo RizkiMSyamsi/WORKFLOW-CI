@@ -1,3 +1,4 @@
+
 import pandas as pd
 import mlflow
 import mlflow.sklearn
@@ -7,8 +8,8 @@ from sklearn.metrics import mean_squared_error, r2_score
 
 # Dataset di folder yang sama
 DATA_PATH = "Sales-Transaction-v.4a_preprocessing.csv"
-
 df = pd.read_csv(DATA_PATH)
+
 print("Dataset shape:", df.shape)
 print("Columns:", list(df.columns))
 
@@ -21,29 +22,31 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 
+with mlflow.start_run() as run:
+    print(f"Active Run ID: {run.info.run_id}")
 
-mlflow.sklearn.autolog(log_models=False) 
+    # Opsional: autolog (bisa dihapus jika sudah manual)
+    mlflow.sklearn.autolog(log_models=False)
 
-model = LinearRegression()
-model.fit(X_train, y_train)
+    model = LinearRegression()
+    model.fit(X_train, y_train)
 
-y_pred = model.predict(X_test)
-mse = mean_squared_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+    y_pred = model.predict(X_test)
 
-# Log metrics manual
-mlflow.log_metric("mse", mse)
-mlflow.log_metric("r2", r2)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
-# Log model
-mlflow.sklearn.log_model(model, artifact_path="model")
-
-# Ambil run_id dari active run
-active_run = mlflow.active_run()
-if active_run:
-    print(f"\nTraining completed successfully!")
-    print(f"Run ID: {active_run.info.run_id}")
     print("MSE:", mse)
     print("R2 :", r2)
-else:
-    print("No active run detected")
+
+    # Log metrics dan model secara manual di dalam run
+    mlflow.log_metric("mse", mse)
+    mlflow.log_metric("r2", r2)
+
+    # Log model — ini pasti tersimpan sekarang
+    mlflow.sklearn.log_model(model, artifact_path="model")
+
+    print("Model dan metrics berhasil di-log ke MLflow!")
+
+# Cetak run ID di akhir (untuk debug)
+print(f"\nTraining completed! Run ID: {run.info.run_id}")

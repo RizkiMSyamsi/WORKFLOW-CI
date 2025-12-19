@@ -18,6 +18,11 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Check Environment
+        run: |
+          python --version
+          pip --version
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -39,18 +44,29 @@ jobs:
           RUN_ID=$(ls -1 mlruns/0/ | grep -E '^[a-f0-9]{32}$' | tail -n 1)
           
           if [ -z "$RUN_ID" ]; then
-            echo "Error: No valid MLflow run ID found!"
+            echo "ERROR: Tidak ditemukan run ID yang valid!"
             exit 1
           fi
           
           echo "Latest Run ID: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-      - name: Debug - Verify Model Artifact Exists
+      - name: Verify Model Artifact Exists
         run: |
-          echo "Checking model artifact..."
-          ls -la mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model/
-          cat mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model/MLmodel
+          echo "Memeriksa artifact model..."
+          ARTIFACT_PATH="mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model"
+          
+          if [ ! -d "$ARTIFACT_PATH" ]; then
+            echo "ERROR: Folder model tidak ditemukan! Pastikan modelling.py menggunakan mlflow.start_run()."
+            ls -la mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/
+            exit 1
+          fi
+          
+          echo "Model artifact berhasil ditemukan:"
+          ls -la $ARTIFACT_PATH
+          echo ""
+          echo "Preview MLmodel:"
+          cat $ARTIFACT_PATH/MLmodel
 
       - name: Upload MLflow Artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
@@ -64,23 +80,30 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Image from MLflow Model
+      - name: Build Docker Image
         env:
           MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
         run: |
-          echo "Building Docker image for run: ${{ steps.get_run_id.outputs.run_id }}"
+          echo "Building Docker image untuk run: ${{ steps.get_run_id.outputs.run_id }}"
           mlflow models build-docker \
             -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
             -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ steps.get_run_id.outputs.run_id }}
 
       - name: Push Docker Images to Docker Hub
         run: |
-          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model
-          RUN_TAG=${{ steps.get_run_id.outputs.run_id }}
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model"
+          RUN_TAG="${{ steps.get_run_id.outputs.run_id }}"
           
-          echo "Pushing image with tag: $RUN_TAG"
+          echo "Push dengan tag run ID: $RUN_TAG"
           docker push $IMAGE_NAME:$RUN_TAG
           
-          echo "Tagging and pushing as latest"
+          echo "Tag dan push sebagai latest"
           docker tag $IMAGE_NAME:$RUN_TAG $IMAGE_NAME:latest
           docker push $IMAGE_NAME:latest
+
+      - name: Pipeline Success
+        run: |
+          echo "Pipeline berhasil selesai!"
+          echo "Docker image tersedia di:"
+          echo "   - ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ steps.get_run_id.outputs.run_id }}"
+          echo "   - ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:latest"
