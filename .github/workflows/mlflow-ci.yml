@@ -33,7 +33,7 @@ jobs:
           python-version: '3.10'
           activate-environment: ${{ env.CONDA_ENV_NAME }}
           environment-file: ${{ env.CONDA_ENV_PATH }}
-          auto-activate-base: false
+          auto-activate-base: true
 
       # 3. Run MLflow Project
       - name: Run MLflow Project
