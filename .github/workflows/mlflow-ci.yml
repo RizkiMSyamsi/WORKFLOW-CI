@@ -10,24 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # ------------------------------
+    # Checkout repository
+    # ------------------------------
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
+    # ------------------------------
+    # Python setup
+    # ------------------------------
     - name: Set up Python 3.10
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
 
-    - name: Install dependencies
+    # ------------------------------
+    # Install dependencies
+    # ------------------------------
+    - name: Install Python dependencies
       run: |
         pip install mlflow==3.7.0
         pip install cloudpickle==3.1.2 numpy==2.2.6 pandas==2.3.3 psutil==7.1.3
         pip install pyarrow==22.0.0 scikit-learn==1.7.2 scipy==1.15.3
 
-    - name: Run MLflow Project
-      run: |
-        mlflow run MLProject
+    # ------------------------------
+    # Run MLflow Project
+    # ------------------------------
+    - name: Run MLflow project
+      run: mlflow run MLProject
 
+    # ------------------------------
+    # Get latest MLflow run_id
+    # ------------------------------
     - name: Get latest run_id
       id: get_run
       run: |
@@ -35,31 +49,43 @@ jobs:
           --max-results 1 | awk 'NR==2 {print $1}')
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
+    # ------------------------------
+    # Upload MLflow artifacts
+    # ------------------------------
     - name: Upload MLflow artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: mlflow-artifacts
         path: MLProject/mlruns
 
-    # =======================
-    # BUILD DOCKER IMAGE
-    # =======================
+    # ------------------------------
+    # Build Docker Model Image
+    # ------------------------------
     - name: Build MLflow Docker Image
       run: |
         mlflow models build-docker \
           --model-uri "runs:/${{ steps.get_run.outputs.run_id }}/model" \
           --name mlflow-sales-model
 
+    # ------------------------------
+    # Docker Hub Login
+    # ------------------------------
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USER }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    # ------------------------------
+    # Tag Docker Image
+    # ------------------------------
     - name: Tag Docker Image
       run: |
         docker tag mlflow-sales-model ${{ secrets.DOCKERHUB_USER }}/sales-model:latest
 
+    # ------------------------------
+    # Push Docker Image
+    # ------------------------------
     - name: Push Docker Image
       run: |
         docker push ${{ secrets.DOCKERHUB_USER }}/sales-model:latest
