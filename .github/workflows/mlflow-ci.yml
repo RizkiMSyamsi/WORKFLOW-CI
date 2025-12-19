@@ -9,6 +9,10 @@ jobs:
   mlflow-ci:
     runs-on: ubuntu-latest
 
+    env:
+      MLFLOW_ARTIFACT_ROOT: ./mlruns
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+
     steps:
     # ------------------------------
     # Checkout repository
@@ -25,7 +29,7 @@ jobs:
         python-version: "3.10"
 
     # ------------------------------
-    # Install Dependencies (pip)
+    # Install Dependencies
     # ------------------------------
     - name: Install Python dependencies
       run: |
@@ -41,7 +45,7 @@ jobs:
         mlflow run MLProject --env-manager=local
 
     # ------------------------------
-    # Get latest MLflow run_id (from MLflow CLI)
+    # Get latest run_id
     # ------------------------------
     - name: Get latest run_id
       id: get_run
@@ -51,27 +55,25 @@ jobs:
         EXP_ID=$(mlflow experiments list | awk -F'  +' '/Sales Transaction - Linear Regression/ {print $1}')
 
         if [ -z "$EXP_ID" ]; then
-          echo "ERROR: Experiment 'Sales Transaction - Linear Regression' tidak ditemukan!"
+          echo "ERROR: Experiment tidak ditemukan!"
           exit 1
         fi
 
         echo "Experiment ID ditemukan: $EXP_ID"
 
-        echo "Mencari RUN ID terbaru..."
+        echo "Mencari run terbaru..."
         RUN_ID=$(mlflow runs list --experiment-id $EXP_ID --max-results 1 | awk 'NR==2 {print $1}')
 
         if [ -z "$RUN_ID" ]; then
-          echo "ERROR: Tidak ada run untuk experiment tersebut!"
+          echo "ERROR: Tidak ada run!"
           exit 1
         fi
 
         echo "Run ID ditemukan: $RUN_ID"
-
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
     # ------------------------------
-    # Upload MLflow Artifacts
-    # (tidak commit ke repo)
+    # Upload Artifacts
     # ------------------------------
     - name: Upload MLflow artifacts
       uses: actions/upload-artifact@v4
@@ -80,7 +82,7 @@ jobs:
         path: MLProject/mlruns
 
     # ------------------------------
-    # Build Docker Image from MLflow Model
+    # Build Docker Image
     # ------------------------------
     - name: Build MLflow Docker Image
       run: |
@@ -89,7 +91,7 @@ jobs:
           --name mlflow-sales-model
 
     # ------------------------------
-    # Login to Docker Hub
+    # Login Docker Hub
     # ------------------------------
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
