@@ -11,51 +11,51 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      - name: Check Environment
-        run: |
-          python --version
-          pip --version
-
-      - name: Install MLflow
+      - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install mlflow scikit-learn pandas
 
       - name: Run MLflow Project
         env:
-          MLFLOW_TRACKING_URI: file:./mlruns
-          MLFLOW_ARTIFACT_ROOT: ./mlruns
+          MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
+          MLFLOW_ARTIFACT_ROOT: ${{ github.workspace }}/mlruns
         run: |
           mlflow run MLProject --env-manager=local
 
-      - name: Get Latest MLflow run_id
+      - name: Get Latest MLflow Run ID
+        id: get_run_id
         run: |
-          echo "Listing contents of mlruns/0/ ..."
+          echo "Listing runs in mlruns/0/"
           ls -la mlruns/0/
           
-          # Ambil hanya folder yang panjangnya 32 karakter (run ID MLflow selalu 32 hex chars)
           RUN_ID=$(ls -1 mlruns/0/ | grep -E '^[a-f0-9]{32}$' | tail -n 1)
           
           if [ -z "$RUN_ID" ]; then
-            echo "Error: No valid MLflow run ID found in mlruns/0/"
-            ls -la mlruns/0/  # debug tambahan
+            echo "Error: No valid MLflow run ID found!"
             exit 1
           fi
           
-          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
-          echo "Successfully retrieved Latest Run ID: $RUN_ID"
+          echo "Latest Run ID: $RUN_ID"
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-      - name: Upload MLflow Artifacts to GitHub
+      - name: Debug - Verify Model Artifact Exists
+        run: |
+          echo "Checking model artifact..."
+          ls -la mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model/
+          cat mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model/MLmodel
+
+      - name: Upload MLflow Artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: mlflow-artifacts
+          name: mlflow-artifacts-run-${{ steps.get_run_id.outputs.run_id }}
           path: mlruns/
 
       - name: Login to Docker Hub
@@ -64,16 +64,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Model
+      - name: Build Docker Image from MLflow Model
+        env:
+          MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
         run: |
-          echo "Building Docker from Run ID: ${{ env.RUN_ID }}"
+          echo "Building Docker image for run: ${{ steps.get_run_id.outputs.run_id }}"
           mlflow models build-docker \
-            -m "runs:/${{ env.RUN_ID }}/model" \
-            -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ env.RUN_ID }}
+            -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
+            -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ steps.get_run_id.outputs.run_id }}
 
-      - name: Push Docker Image
+      - name: Push Docker Images to Docker Hub
         run: |
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ env.RUN_ID }}
-          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ env.RUN_ID }} \
-                     ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:latest
+          IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model
+          RUN_TAG=${{ steps.get_run_id.outputs.run_id }}
+          
+          echo "Pushing image with tag: $RUN_TAG"
+          docker push $IMAGE_NAME:$RUN_TAG
+          
+          echo "Tagging and pushing as latest"
+          docker tag $IMAGE_NAME:$RUN_TAG $IMAGE_NAME:latest
+          docker push $IMAGE_NAME:latest
