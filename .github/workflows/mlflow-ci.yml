@@ -70,6 +70,8 @@ jobs:
       - name: Get latest MLflow run_id
         id: get_run_id
         run: |
+            source "$(conda info --base)/etc/profile.d/conda.sh"
+            conda activate mlflow-env
             python - <<EOF
             import mlflow
             mlflow.set_tracking_uri("MLProject/mlflow.db")
