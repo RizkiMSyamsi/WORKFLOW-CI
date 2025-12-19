@@ -1,8 +1,8 @@
-name: MLflow CI Pipeline
+name: MLflow CI - Retrain & Build Docker
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -10,100 +10,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Check Environment
-        run: |
-          python --version
-          pip --version
+    - name: Check Environment (optional, untuk debug)
+      run: |
+        python --version
+        pip --version
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install mlflow scikit-learn pandas
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install mlflow scikit-learn pandas numpy jq  # tambah jq untuk parsing JSON
 
-      - name: Run MLflow Project
-        env:
-          MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
-          MLFLOW_ARTIFACT_ROOT: ${{ github.workspace }}/mlruns
-        run: |
-          mlflow run MLProject --env-manager=local
+    - name: Run MLflow Project (Retraining)
+      run: |
+        cd MLProject
+        mlflow run .
 
-      - name: Get Latest MLflow Run ID
-        id: get_run_id
-        run: |
-          echo "Listing runs in mlruns/0/"
-          ls -la mlruns/0/
-          
-          RUN_ID=$(ls -1 mlruns/0/ | grep -E '^[a-f0-9]{32}$' | tail -n 1)
-          
-          if [ -z "$RUN_ID" ]; then
-            echo "ERROR: Tidak ditemukan run ID yang valid!"
-            exit 1
-          fi
-          
-          echo "Latest Run ID: $RUN_ID"
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+    - name: Get latest MLflow run_id
+      id: get_run
+      run: |
+        cd MLProject
+        RUN_ID=$(mlflow runs list --experiment-id 0 --max-results 1 | grep -oE '[a-f0-9]{32}')
+        echo "Latest Run ID: $RUN_ID"
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-      - name: Verify Model Artifact Exists
-        run: |
-          echo "Memeriksa artifact model..."
-          ARTIFACT_PATH="mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/model"
-          
-          if [ ! -d "$ARTIFACT_PATH" ]; then
-            echo "ERROR: Folder model tidak ditemukan! Pastikan modelling.py menggunakan mlflow.start_run()."
-            ls -la mlruns/0/${{ steps.get_run_id.outputs.run_id }}/artifacts/
-            exit 1
-          fi
-          
-          echo "Model artifact berhasil ditemukan:"
-          ls -la $ARTIFACT_PATH
-          echo ""
-          echo "Preview MLmodel:"
-          cat $ARTIFACT_PATH/MLmodel
+    - name: Build Docker Image for Model Serving
+      run: |
+        cd MLProject
+        mlflow models build-docker -m runs:/${{ steps.get_run.outputs.run_id }}/artifact/model -n yourusername/sales-prediction-model:latest
+        # Catatan: path model biasanya "model", bukan "/model" — sesuaikan jika perlu
 
-      - name: Upload MLflow Artifacts to GitHub Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlflow-artifacts-run-${{ steps.get_run_id.outputs.run_id }}
-          path: mlruns/
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Tag Docker Image (optional, jika butuh tag tambahan)
+      run: |
+        docker tag yourusername/sales-prediction-model:latest yourusername/sales-prediction-model:${{ github.sha }}
 
-      - name: Build Docker Image
-        env:
-          MLFLOW_TRACKING_URI: file:${{ github.workspace }}/mlruns
-        run: |
-          echo "Building Docker image untuk run: ${{ steps.get_run_id.outputs.run_id }}"
-          mlflow models build-docker \
-            -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
-            -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ steps.get_run_id.outputs.run_id }}
+    - name: Push Docker Image to Docker Hub
+      run: |
+        docker push yourusername/sales-prediction-model:latest
+        # docker push yourusername/sales-prediction-model:${{ github.sha }}  # jika ditag dengan commit
 
-      - name: Push Docker Images to Docker Hub
-        run: |
-          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model"
-          RUN_TAG="${{ steps.get_run_id.outputs.run_id }}"
-          
-          echo "Push dengan tag run ID: $RUN_TAG"
-          docker push $IMAGE_NAME:$RUN_TAG
-          
-          echo "Tag dan push sebagai latest"
-          docker tag $IMAGE_NAME:$RUN_TAG $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:latest
-
-      - name: Pipeline Success
-        run: |
-          echo "Pipeline berhasil selesai!"
-          echo "Docker image tersedia di:"
-          echo "   - ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:${{ steps.get_run_id.outputs.run_id }}"
-          echo "   - ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-sales-model:latest"
+    - name: Complete job (optional log)
+      run: echo "Workflow completed successfully!"
