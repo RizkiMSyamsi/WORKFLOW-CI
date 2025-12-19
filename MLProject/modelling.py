@@ -40,7 +40,11 @@ os.environ.pop("MLFLOW_RUN_ID", None)
 mlflow.end_run()
 mlflow.set_tracking_uri("sqlite:///mlflow.db")
 mlflow.set_experiment("Sales Transaction - Linear Regression")
-os.makedirs("mlruns", exist_ok=True)
+
+mlruns_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mlruns")
+os.makedirs(mlruns_dir, exist_ok=True)
+mlflow.set_tracking_uri(f"file://{mlruns_dir}")
+
 
 # ======================
 # Load dataset
