@@ -2,12 +2,18 @@ import os
 import argparse
 import sys
 import pandas as pd
+import numpy as np
 import mlflow
 import mlflow.sklearn
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import (
+    mean_squared_error,
+    r2_score,
+    mean_absolute_error,
+    explained_variance_score
+)
 
 # ======================
 # Argumen dari MLProject
@@ -83,12 +89,21 @@ with mlflow.start_run(run_name="Linear Regression - Sales Price"):
 
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_test, y_pred)
+    explained_var = explained_variance_score(y_test, y_pred)
 
     print(f"MSE: {mse}")
+    print(f"RMSE: {rmse}")
+    print(f"MAE: {mae}")
     print(f"R2 : {r2}")
+    print(f"explained_variance: {explained_var}")
 
     mlflow.log_metric("mse", mse)
+    mlflow.log_metric("rmse", rmse)
+    mlflow.log_metric("mae", mae)
     mlflow.log_metric("r2", r2)
+    mlflow.log_metric("explained_var", explained_var)
     mlflow.log_param("input_path", csv_path)
 
     mlflow.sklearn.log_model(model, artifact_path="model")
